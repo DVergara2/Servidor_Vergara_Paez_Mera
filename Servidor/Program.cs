@@ -1,17 +1,20 @@
-﻿using System;
+﻿/*using System;
+using System.Collections.Generic;
 using System.Net;
 using System.Net.Sockets;
 using System.Text;
-using System.Threading;
+using System.Threading.Tasks;
 
 class Program
 {
+    static List<TcpClient> clients = new List<TcpClient>();
+
     static void Main(string[] args)
     {
         TcpListener server = null;
         try
         {
-            // Establece el servidor para escuchar en el puerto 13000
+            // Establece el servidor para escuchar en el puerto 13004
             Int32 port = 13004;
             IPAddress localAddr = IPAddress.Parse("172.20.11.5");
             server = new TcpListener(localAddr, port);
@@ -19,22 +22,19 @@ class Program
             // Inicia el servidor
             server.Start();
 
-            // Buffer para leer datos
-            Byte[] bytes = new Byte[256];
-            String data = null;
+            Console.WriteLine("Servidor iniciado. Esperando conexiones...");
 
-            // Loop infinito para aceptar conexiones
             while (true)
             {
-                Console.WriteLine("Esperando una conexión... ");
-
                 // Acepta una conexión de cliente
                 TcpClient client = server.AcceptTcpClient();
-                Console.WriteLine("Conectado!");
+                Console.WriteLine("Cliente conectado!");
 
-                // Crea un nuevo thread para manejar al cliente
-                Thread clientThread = new Thread(() => HandleClient(client));
-                clientThread.Start();
+                // Agrega el cliente a la lista de clientes
+                clients.Add(client);
+
+                // Utiliza Task.Run para manejar al cliente de manera asíncrona
+                Task.Run(() => HandleClient(client));
             }
         }
         catch (SocketException e)
@@ -47,39 +47,144 @@ class Program
             server.Stop();
         }
 
-        Console.WriteLine("\nPresiona ENTER para continuar...");
+        Console.WriteLine("\nPresiona ENTER para salir...");
         Console.Read();
     }
 
     static void HandleClient(TcpClient client)
     {
-        byte[] bytes = new byte[256];
-        string data = null;
-
-        NetworkStream stream = client.GetStream();
-
-        int i;
-
-        // Loop para recibir todos los datos enviados por el cliente
-        while ((i = stream.Read(bytes, 0, bytes.Length)) != 0)
+        try
         {
-            // Traduce los datos recibidos a una cadena de texto
-            data = Encoding.ASCII.GetString(bytes, 0, i);
-            Console.WriteLine("Recibido: {0}", data);
+            // Buffer para leer datos
+            byte[] bytes = new byte[256];
+            string data;
 
-            string message = "JAJAJA si soy";
-            data = message;
-            // Procesa los datos enviados por el cliente
-            data = data.ToUpper();
+            using (NetworkStream stream = client.GetStream())
+            {
+                int bytesRead;
 
-            byte[] msg = Encoding.ASCII.GetBytes(data);
+                // Loop infinito para recibir y enviar datos al cliente
+                while (true)
+                {
+                    bytesRead = stream.Read(bytes, 0, bytes.Length);
 
-            // Envía los datos de vuelta al cliente
-            stream.Write(msg, 0, msg.Length);
-            Console.WriteLine("Enviado: {0}", data);
+                    // Si no se reciben bytes, el cliente se desconectó
+                    if (bytesRead == 0)
+                        break;
+
+                    // Traduce los datos recibidos a una cadena de texto
+                    data = Encoding.ASCII.GetString(bytes, 0, bytesRead);
+                    Console.WriteLine("Recibido de cliente {0}: {1}", client.Client.RemoteEndPoint, data);
+
+                    // Envía el mensaje a todos los otros clientes
+                    SendMessageToAllClients(data, client);
+                }
+            }
         }
+        catch (Exception e)
+        {
+            Console.WriteLine("Excepción en HandleClient: {0}", e);
+        }
+        finally
+        {
+            // Remueve al cliente de la lista
+            clients.Remove(client);
 
-        // Cierra la conexión con el cliente
-        client.Close();
+            // Cierra la conexión con el cliente
+            client.Close();
+            Console.WriteLine("Cliente desconectado: {0}", client.Client.RemoteEndPoint);
+        }
+    }
+
+    static void SendMessageToAllClients(string message, TcpClient sender)
+    {
+        // Convierte el mensaje en bytes
+        byte[] bytes = Encoding.ASCII.GetBytes(message);
+
+        // Itera sobre todos los clientes y envía el mensaje, excepto al remitente
+        foreach (TcpClient client in clients)
+        {
+            if (client != sender)
+            {
+                try
+                {
+                    NetworkStream stream = client.GetStream();
+                    stream.Write(bytes, 0, bytes.Length);
+                    Console.WriteLine("Enviado a cliente {0}: {1}", client.Client.RemoteEndPoint, message);
+                }
+                catch (Exception ex)
+                {
+                    Console.WriteLine("Error al enviar mensaje a cliente {0}: {1}", client.Client.RemoteEndPoint, ex.Message);
+                }
+            }
+        }
+    }
+}*/
+using System;
+using System.Collections.Generic;
+using System.Net;
+using System.Net.Sockets;
+using System.Text;
+using System.Threading;
+
+class Server
+{
+    private static List<TcpClient> clients = new List<TcpClient>();
+
+    static void Main(string[] args)
+    {
+        TcpListener server = new TcpListener(IPAddress.Any, 8888);
+        server.Start();
+        Console.WriteLine("Servidor iniciado...");
+
+        while (true)
+        {
+            TcpClient client = server.AcceptTcpClient();
+            clients.Add(client);
+            Console.WriteLine("Cliente conectado...");
+
+            Thread clientThread = new Thread(() => HandleClient(client));
+            clientThread.Start();
+        }
+    }
+
+    private static void HandleClient(TcpClient client)
+    {
+        NetworkStream stream = client.GetStream();
+        byte[] buffer = new byte[1024];
+        int bytesRead;
+
+        try
+        {
+            while ((bytesRead = stream.Read(buffer, 0, buffer.Length)) != 0)
+            {
+                string message = Encoding.ASCII.GetString(buffer, 0, bytesRead);
+                Console.WriteLine("Mensaje recibido: " + message);
+                BroadcastMessage(message, client);
+            }
+        }
+        catch (Exception e)
+        {
+            Console.WriteLine("Error: " + e.Message);
+        }
+        finally
+        {
+            clients.Remove(client);
+            client.Close();
+        }
+    }
+
+    private static void BroadcastMessage(string message, TcpClient senderClient)
+    {
+        byte[] buffer = Encoding.ASCII.GetBytes(message);
+
+        foreach (var client in clients)
+        {
+            if (client != senderClient)
+            {
+                NetworkStream stream = client.GetStream();
+                stream.Write(buffer, 0, buffer.Length);
+            }
+        }
     }
 }

@@ -1,72 +1,72 @@
 ﻿
 
 
-
 using System;
 using System.Net.Sockets;
 using System.Text;
+using System.Threading;
 
 class Client
 {
+    private static TcpClient client;
+    private static NetworkStream stream;
+    private static string username;
+
     static void Main(string[] args)
     {
         try
         {
-            // Conecta al servidor en el puerto 13004
-            Int32 port = 13004;
-            TcpClient client = new TcpClient("172.20.11.5", port);
+            Console.Write("Ingresar nombre de usuario: ");
+            username = Console.ReadLine();
 
-            // Obtiene el stream para leer y escribir datos
-            NetworkStream stream = client.GetStream();
+            client = new TcpClient("172.20.11.5", 8888);
+            stream = client.GetStream();
 
-            // Mensaje para enviar inicialmente
-            string initialMessage = "eres puto";
-            byte[] initialData = Encoding.ASCII.GetBytes(initialMessage);
+            Thread receiveThread = new Thread(new ThreadStart(ReceiveMessages));
+            receiveThread.Start();
 
-            // Envía el mensaje inicial al servidor
-            stream.Write(initialData, 0, initialData.Length);
-            Console.WriteLine("Enviado: {0}", initialMessage);
+            Console.WriteLine("Cliente conectado. Puede empezar a enviar mensajes...");
 
-            // Buffer para leer la respuesta del servidor
-            byte[] data = new byte[256];
-            String responseData = String.Empty;
-
-            // Lee la respuesta inicial del servidor
-            Int32 initialBytes = stream.Read(data, 0, data.Length);
-            responseData = Encoding.ASCII.GetString(data, 0, initialBytes);
-            Console.WriteLine("Recibido inicialmente: {0}", responseData);
-
-            // Bucle para enviar mensajes desde la consola al servidor
             while (true)
             {
-                // Leer mensaje desde la consola
-                string input = Console.ReadLine();
-
-                if (input.ToLower() == "exit")
-                    break;
-
-                // Convertir mensaje a bytes
-                data = Encoding.ASCII.GetBytes(input);
-
-                // Enviar mensaje al servidor
-                stream.Write(data, 0, data.Length);
-                Console.WriteLine("Enviado: {0}", input);
+                string message = Console.ReadLine();
+                SendMessage($"{DateTime.Now:G} {username}: {message}");
             }
-
-            // Cierra todo
+        }
+        catch (Exception e)
+        {
+            Console.WriteLine("Error: " + e.Message);
+        }
+        finally
+        {
             stream.Close();
             client.Close();
         }
-        catch (ArgumentNullException e)
-        {
-            Console.WriteLine("ArgumentNullException: {0}", e);
-        }
-        catch (SocketException e)
-        {
-            Console.WriteLine("SocketException: {0}", e);
-        }
+    }
 
-        Console.WriteLine("\nPresiona ENTER para continuar...");
-        Console.Read();
+    private static void SendMessage(string message)
+    {
+        byte[] buffer = Encoding.ASCII.GetBytes(message);
+        stream.Write(buffer, 0, buffer.Length);
+        Console.WriteLine($"[{DateTime.Now:G}] Mensaje enviado: {message}");
+    }
+
+    private static void ReceiveMessages()
+    {
+        byte[] buffer = new byte[1024];
+        int bytesRead;
+
+        try
+        {
+            while ((bytesRead = stream.Read(buffer, 0, buffer.Length)) != 0)
+            {
+                string message = Encoding.ASCII.GetString(buffer, 0, bytesRead);
+                Console.WriteLine($"[{DateTime.Now:G}] Mensaje recibido: {message}");
+            }
+        }
+        catch (Exception e)
+        {
+            Console.WriteLine("Error: " + e.Message);
+        }
     }
 }
